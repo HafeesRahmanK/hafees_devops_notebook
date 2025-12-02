@@ -37,7 +37,7 @@ Your logs must have the following labels for the dashboard variables to work:
 
 ## 📥 Installation
 
-1.  **Download:** Get the `Server logs.json` file from this repository.
+1.  **Download:** Get the `Server_logs_dashboard.json` file from this repository.
 2.  **Import:**
     * Open Grafana.
     * Go to **Dashboards** -> **New** -> **Import**.
