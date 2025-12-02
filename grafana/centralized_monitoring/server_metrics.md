@@ -12,7 +12,7 @@ It is built on the **Management by Exception** philosophy:
 2.  **Bottom Row:** Critical Incident Lists (What exactly is broken?).
 3.  **Middle Section:** Deep-dive metrics for individual servers.
 
-![Dashboard Overview Screenshot](path/to/your/dashboard-overview.png)
+![Dashboard Overview Screenshot](screenshots/Screenshot 2025-12-02 143538.png)
 *(Replace this placeholder with a full screenshot of your dashboard)*
 
 ---
