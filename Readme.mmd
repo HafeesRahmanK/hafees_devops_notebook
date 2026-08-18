@@ -1,0 +1,145 @@
+flowchart TB
+
+    %% ==================== DNS / INGRESS ====================
+    subgraph DNS["🌐 External DNS & Ingress"]
+        R53["AWS Route53"]
+        NC["Namecheap DNS"]
+    end
+
+    %% ==================== OCI NETWORK BOUNDARY ====================
+    subgraph NET["☁️ OCI — Jeddah Region — near/production — VCN + Security Lists"]
+
+        subgraph PUBSUB["Public Subnet — NSGs + Strict Ingress/Egress Rules"]
+
+            %% ---------- LOAD BALANCERS ----------
+            subgraph LB["Load Balancing / Entry Points"]
+                ALB["OCI Application Load Balancer<br/>(HTTP/API workloads)"]
+                NLB1["Nginx-LoadBalancer<br/>(Active — WebRTC Reverse Proxy)"]
+                NLB2["Nginx-LoadBalancer2<br/>(Passive Standby)"]:::standby
+            end
+
+            %% ---------- ACTIVE COMPUTE ----------
+            subgraph ACTIVE["Active Application Clusters"]
+
+                subgraph VCC["Video Conferencing Cluster"]
+                    VC1["vc-react<br/>videoconference / vcapi / board / pad"]:::active
+                    VC2["vc-react2<br/>videoconference / vcapi / board / pad"]:::active
+                    SFU1["sfu (Mediasoup)"]:::active
+                    SFU2["sfu2 (Mediasoup)"]:::active
+                    TURN["turn<br/>TURN/STUN server"]:::active
+                end
+
+                subgraph BIZ["Business & Collaboration Services"]
+                    CG1["connect-governance<br/>governance / connect"]:::active
+                    CG2["connect-governance2"]:::active
+                    DSC1["drive-sign-calendar<br/>drive / sign / calendar / license"]:::active
+                    DSC2["drive-sign-calendar2"]:::active
+                    CHAT1["chat"]:::active
+                    CHAT2["chat2"]:::active
+                    DT1["digitaltwin-1"]:::active
+                    DT2["digitaltwin-2"]:::active
+                end
+
+                subgraph AIU["AI & Utilities"]
+                    AI1["ai-api<br/>ai-api / gpt"]:::active
+                    AI2["ai-api2"]:::active
+                    MAIL1["mail<br/>notification engine"]:::active
+                    MAIL2["mail2"]:::active
+                    SHL1["shlink (Active)<br/>shlink-api / web / mysql"]:::active
+                end
+            end
+
+            %% ---------- STANDBY ----------
+            subgraph STANDBY["Standby / Replica Nodes"]
+                SHL2["shlink2 (Standby Replica)"]:::standby
+            end
+        end
+    end
+
+    %% ==================== DATA TIER ====================
+    subgraph DBT["Database Tier"]
+        DB1["base-db (Primary Active)<br/>Self-hosted Supabase + MongoDB Cluster"]:::db
+        DB2["base-db2 (Standby Replica)"]:::standbydb
+    end
+
+    %% ==================== MONITORING TIER ====================
+    subgraph MON["Observability & Telemetry Tier"]
+        GRAF["grafana node<br/>Grafana / Prometheus / Loki / Alloy"]:::mon
+    end
+
+    %% ==================== DNS -> ENTRY ====================
+    R53 -->|DNS Resolution| ALB
+    R53 -->|DNS Resolution| NLB1
+    NC -->|DNS Resolution| ALB
+    NC -->|DNS Resolution| NLB1
+
+    %% ==================== ALB ROUTING ====================
+    ALB -->|HTTP/REST| AI1
+    ALB -->|HTTP/REST| AI2
+    ALB -->|HTTP/REST| DSC1
+    ALB -->|HTTP/REST| DSC2
+    ALB -->|HTTP/REST| MAIL1
+    ALB -->|HTTP/REST| MAIL2
+    ALB -->|HTTP/REST| CG1
+    ALB -->|HTTP/REST| CG2
+    ALB -->|HTTP/REST| CHAT1
+    ALB -->|HTTP/REST| CHAT2
+    ALB -->|HTTP/REST| DT1
+    ALB -->|HTTP/REST| DT2
+
+    %% ==================== NGINX / WEBRTC ROUTING ====================
+    NLB1 -->|HTTPS/WSS| VC1
+    NLB1 -->|HTTPS/WSS| VC2
+    NLB1 -.->|Active/Standby Failover| NLB2
+
+    SFU1 <-->|Paired Signaling| VC1
+    SFU2 <-->|Paired Signaling| VC2
+    SFU1 -->|UDP 40000-50000 Media| TURN
+    SFU2 -->|UDP 40000-50000 Media| TURN
+    TURN -->|WebSocket / TURN Handshake| SFU1
+    TURN -->|WebSocket / TURN Handshake| SFU2
+
+    %% ==================== INTER-SERVICE WORKFLOWS ====================
+    CG1 -->|REST → vcapi| VC1
+    CG2 -->|REST → vcapi| VC2
+    CHAT1 -->|REST → vcapi| VC1
+    DSC1 -->|REST → vcapi via sign| VC1
+
+    CG1 -->|API| SHL1
+    CG2 -->|API| SHL1
+    DSC1 -->|API via sign| SHL1
+    SHL1 -.->|MySQL Replication| SHL2
+
+    CG1 -->|API| AI1
+    CG2 -->|API| AI1
+    VC1 -->|API| AI1
+    VC2 -->|API| AI2
+
+    CG1 -.->|Internal API| MAIL1
+    CG2 -.->|Internal API| MAIL1
+    DSC1 -.->|Internal API| MAIL1
+    CHAT1 -.->|Internal API| MAIL1
+    DT1 -.->|Internal API| MAIL1
+    VC1 -.->|Internal API| MAIL1
+
+    %% ==================== DATABASE CONNECTIVITY ====================
+    VCC -->|Private DB — Restricted Ports| DB1
+    BIZ -->|Private DB — Restricted Ports| DB1
+    AIU -->|Private DB — Restricted Ports| DB1
+    SHL1 -->|Private DB — Restricted Ports| DB1
+    DB1 -.->|Sync Replication| DB2
+
+    %% ==================== MONITORING MESH ====================
+    GRAF -.->|Pull/Push: Metrics + Logs| VCC
+    GRAF -.->|Pull/Push: Metrics + Logs| BIZ
+    GRAF -.->|Pull/Push: Metrics + Logs| AIU
+    GRAF -.->|ICMP Ping + TCP 12345 Health Check| LB
+    GRAF -.->|ICMP Ping + TCP 12345 Health Check| DBT
+    GRAF -.->|ICMP Ping + TCP 12345 Health Check| STANDBY
+
+    %% ==================== STYLES ====================
+    classDef active fill:#d4edda,stroke:#28a745,stroke-width:1px,color:#155724;
+    classDef standby fill:#eeeeee,stroke:#999999,stroke-width:1px,stroke-dasharray:5 5,color:#666666;
+    classDef db fill:#cce5ff,stroke:#004085,stroke-width:1.5px,color:#003366;
+    classDef standbydb fill:#eeeeee,stroke:#999999,stroke-width:1px,stroke-dasharray:5 5,color:#666666;
+    classDef mon fill:#fff3cd,stroke:#856404,stroke-width:1.5px,color:#664d03;
